@@ -11,11 +11,17 @@ from telethon.tl.types import (
     InputReportReasonOther,
 )
 
-API_ID = int(os.environ.get("35383294"))
-API_HASH = os.environ.get("685a6c1691a92cdd05ab66f5c3f5161b")
-PHONE = os.environ.get("+639456655624")
-BOT_TOKEN = os.environ.get("8824864653:AAEmpXwgdiGLKqLq_VjiIcuvRbfFvcNbDHY")
+# ============================================
+# DIRECT VARIABLES (No environment variables)
+# ============================================
+API_ID = 35383294  # Direct integer, no int() needed
+API_HASH = "685a6c1691a92cdd05ab66f5c3f5161b"
+PHONE = "+639456655624"
+BOT_TOKEN = "8824864653:AAEmpXwgdiGLKqLq_VjiIcuvRbfFvcNbDHY"
 
+# ============================================
+# REASON MAP
+# ============================================
 reason_map = {
     "spam": InputReportReasonSpam(),
     "fake": InputReportReasonFake(),
@@ -24,43 +30,49 @@ reason_map = {
     "other": InputReportReasonOther()
 }
 
+# ============================================
+# CONVERSATION STATES
+# ============================================
 USERNAME, REASON, COUNT = range(3)
 
+# ============================================
+# COMMAND HANDLERS
+# ============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("آیدی هدف (بدون @) را بفرست:")
+    await update.message.reply_text("📌 *YORODA REPORT BOT*\n\nSend the target username (without @):")
     return USERNAME
 
 async def username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['username'] = update.message.text.strip().replace("@", "")
-    await update.message.reply_text("دلیل ریپورت (spam, fake, violence, porn, other):")
+    await update.message.reply_text("📌 *Select report reason:*\n\nspam - Spam messages\nfake - Fake account\nviolence - Violence content\nporn - Pornography\nother - Other reasons")
     return REASON
 
 async def reason_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reason = update.message.text.strip().lower()
     if reason not in reason_map:
-        await update.message.reply_text("❌ دلیل معتبر نیست. لطفا یکی از این موارد را وارد کن: spam, fake, violence, porn, other")
+        await update.message.reply_text("❌ Invalid reason! Choose: spam, fake, violence, porn, other")
         return REASON
     context.user_data['reason'] = reason
-    await update.message.reply_text("چند پست آخر را ریپورت کنیم؟ (مثلاً 50):")
+    await update.message.reply_text("📌 *How many recent messages to report?*\n(Example: 50)")
     return COUNT
 
 async def count_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         count = int(update.message.text.strip())
     except ValueError:
-        await update.message.reply_text("❌ لطفا یک عدد معتبر وارد کنید.")
+        await update.message.reply_text("❌ Please enter a valid number!")
         return COUNT
 
     username = context.user_data['username']
     reason = context.user_data['reason']
 
-    await update.message.reply_text("⏳ شروع ریپورت...")
+    await update.message.reply_text("⏳ Starting report process...")
 
     client = TelegramClient("session", API_ID, API_HASH)
     try:
         await client.start(phone=PHONE)
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا در اتصال به تلگرام: {e}")
+        await update.message.reply_text(f"❌ Connection error: {e}")
         return ConversationHandler.END
 
     try:
@@ -69,21 +81,26 @@ async def count_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         for i, msg in enumerate(messages, 1):
             try:
-                await client.report_messages(entity, [msg.id], reason_map[reason], "Reported via bot")
+                await client.report_messages(entity, [msg.id], reason_map[reason], "Reported via Yoroda Bot")
                 success += 1
-                await asyncio.sleep(1)  # جلوگیری از بلاک شدن به خاطر سرعت زیاد
+                await asyncio.sleep(1)  # Prevent rate limiting
             except Exception as e:
-                await update.message.reply_text(f"خطا در پست {i}: {e}")
-        await update.message.reply_text(f"😽 تمام شد. تعداد موفق: {success}/{count}")
+                await update.message.reply_text(f"Error on message {i}: {e}")
+        await update.message.reply_text(f"✅ *Complete!*\nSuccess: {success}/{count}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
     finally:
         await client.disconnect()
 
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ لغو شد.")
+    await update.message.reply_text("❌ Cancelled.")
     return ConversationHandler.END
 
+# ============================================
+# MAIN FUNCTION
+# ============================================
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -98,7 +115,7 @@ def main():
     )
 
     app.add_handler(conv)
-    print("🏳️ Bot is running...")
+    print("🏳️ Yoroda Report Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
